@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<classpath>
+	<classpathentry kind="src" path="src"/>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
+	<classpathentry kind="lib" path="/home/cefn/Documents/Processing/libraries/fullscreen/library/fullscreen.jar"/>
+	<classpathentry kind="lib" path="/home/cefn/Documents/Processing/libraries/gsvideo/library/gstreamer-java-bin-1.4.jar"/>
+	<classpathentry kind="lib" path="/home/cefn/Documents/Processing/libraries/gsvideo/library/gsvideo.jar" sourcepath="/home/cefn/Downloads/GSVideo-Linux-0.7.zip"/>
+	<classpathentry kind="lib" path="/home/cefn/Documents/Processing/libraries/gsvideo/library/jna-3.2.5.jar"/>
+	<classpathentry kind="lib" path="/home/cefn/Developer/processing-1.1/lib/core.jar"/>
+	<classpathentry kind="output" path="bin"/>
+</classpath>
