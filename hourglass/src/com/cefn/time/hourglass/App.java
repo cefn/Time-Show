@@ -13,10 +13,8 @@ import processing.core.PApplet;
 
 public abstract class App extends PApplet{
 	
-	String filePath = "/home/cefn/Documents/curiosity/timeshow/processing/hourglass/images/";
 	AudioClip clip;
-	
-	
+		
 	float WIDTH = 300;
 	float HEIGHT = 600;
 
@@ -44,7 +42,7 @@ public abstract class App extends PApplet{
 	public void playWav(String filename){
 		stopWav();
 		try{
-			java.net.URL url = new URL("file://" + filePath + filename);
+			java.net.URL url = new URL("file://" + filename);
 			java.io.File file = new java.io.File(url.toURI());
 			System.out.println("Attempting to play " + file.getAbsolutePath());
 			clip = this.getAudioClip(url);
@@ -63,7 +61,11 @@ public abstract class App extends PApplet{
 		this.gravity = Vector.vectorWithAngle(gravityAngle).times(G);
 		System.out.println("New gravity unit vector is " + gravity.unitVector());
 	}	
-
+	
+	public float getGravityAngle(){
+		return (float)Math.atan2((double)gravity.x,(double)-gravity.y);
+	}
+	
 	public void keyPressed(KeyEvent e){
 		//System.out.println("Received key event " + e);
 		if(e.getKeyCode() == LEFT){

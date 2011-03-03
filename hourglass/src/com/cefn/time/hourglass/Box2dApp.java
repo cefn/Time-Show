@@ -1,11 +1,17 @@
 package com.cefn.time.hourglass;
 
+import processing.core.PImage;
 import processing.serial.*;
 
 import cc.arduino.*;
 
+import java.io.ObjectInputStream.GetField;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -20,12 +26,13 @@ import org.jbox2d.dynamics.Body;
 import org.jbox2d.dynamics.BodyDef;
 import org.jbox2d.dynamics.World;
 
-public class Box2dApp extends App {
+import com.cefn.time.hourglass.StoryboardApp.Stage;
 
+public class Box2dApp extends App {
 	
-	Serial serial;
+	Serial serial = null;
 	
-	public int targetFps = 30;
+	public int targetFps = 60;
 	public float timeStep = 1f / (float) targetFps;
 	public int iterations = 5;
 
@@ -38,7 +45,8 @@ public class Box2dApp extends App {
 	float rx; //radius of hourglass ellipses in x dimension
 	float ry; //radius of hourglass ellipses in y dimension
 
-	float targetWaist = 0.3f; // the hourglass waist as a share of width
+	float targetCircleRadius = 0.05f; // the grain size as a share of width
+	float targetWaist = 0.25f; // the hourglass waist as a share of width
 	
 	protected AABB boundingBox;
 	protected World box2dWorld;
@@ -47,25 +55,30 @@ public class Box2dApp extends App {
 	protected PolygonDef groundPolygonDef;
 
 	protected float scale = 10f;
-	protected float circleRadius = 2f;
 
 	float scaledWidth = WIDTH / scale;
 	float scaledHeight = HEIGHT / scale;
 
+	protected float circleRadius = scaledWidth * targetCircleRadius;
+
+	protected List<Stage> allStages = new ArrayList<Stage>();
+	protected Stage[] liveStages = new Stage[2];
+	
 	protected Vec2 v(float x, float y) {
 		return new Vec2(x, y);
 	}
-
+	
 	protected Vec2 randomV() {
 		return new Vec2(random(scaledWidth), random(scaledHeight));
 	}
 
 	public void setup() {
 		// configure processing
-		size((int) WIDTH, (int) HEIGHT, P3D);
+		size((int) WIDTH, (int) HEIGHT, OPENGL);
 		frameRate(targetFps);
 		
-		serial = new Serial(this, Serial.list()[0], 9600);
+		//set up serial link to arduino
+		//serial = new Serial(this, Serial.list()[0], 9600);
 		
 		// work out the angle where the ellipse lines should intersect
 		// coordinate origins for each ellipse are separated by scaledHeight
@@ -75,33 +88,42 @@ public class Box2dApp extends App {
 		float theta = asin(targetWaist); // the angle subtending the waist
 		endAngle = (PI * 0.5f) - theta;
 		rx = scaledWidth * 0.5f;// ellipses fill screen horizontally
-		ry = scaledHeight * 0.5f / cos(theta); // radius is enough that
-														// the curve fills the
-														// height
+		ry = scaledHeight * 0.5f / cos(theta); // radius is enough that the curve fills the height
 		
 		// create world
 		boundingBox = new AABB(v(0, 0), v(scaledWidth, scaledHeight));
-		Vec2 gravity = v(0, -10);
+		Vec2 gravity = v(0, 0);
 		boolean sleep = false;
 		box2dWorld = new World(boundingBox, gravity, sleep);
+		setGravityAngle(PI);
 
 		//add floor and ceiling
-		addLine(0.1f,0.1f,29.9f,0.1f);
+		addLine(0.1f,0.1f,29.9f,0.1f); //adding them at the borders makes them invisible
 		addLine(0.1f,59.9f,29.9f,59.9f);
 
-		for (int ballCount = 0; ballCount < NUM_BALLS; ballCount++) {
-			addBall();
-		}
-
-		/** Draw hourglass shape */
+		/** Create hourglass boundary using edge polygons*/
 		plotHourglass();
+				
+		allStages = Arrays.asList(new Stage[]{
+			new Stage("sperm.png","rumpsong.wav"){},
+			new Stage("heart.png","heartbeat-01.wav"){},
+			new Stage("baby.png","birth.wav"){},
+			new Stage("adult.png","adult.wav"){},
+			new Stage("pensioner.png","elderly.wav"){}
+		});	  	 
+		
+		for(Stage stage:allStages){
+			stage.setup();
+		}
+		
+		resetStages();
 
 	}
 
 	public void plotHourglass() {
 	
 		// draw each ellipse's lines as numLines line segments
-		int numLines = 8;
+		int numLines = 6;
 		float topCx = scaledWidth * 0.5f, topCy = 0;
 		float bottomCx = scaledWidth * 0.5f, bottomCy = scaledHeight;
 
@@ -159,7 +181,6 @@ public class Box2dApp extends App {
 		PolygonDef linePolyDef = new PolygonDef();
 		linePolyDef.addVertex(v(0, 0));
 		linePolyDef.addVertex(v(bx - ax, by - ay));
-		//linePolyDef.addVertex(v(0, 0)); //TODO CH how do you close a polygon
 		linePolyDef.friction = 0f;
 		BodyDef lineBodyDef = new BodyDef();
 		lineBodyDef.position = v(ax, ay);
@@ -168,16 +189,19 @@ public class Box2dApp extends App {
 		lines.add(lineBody);
 	}
 
-	public void addBall() {
-		
+	public void addRandomBall(){
 		float ellipseCentreX = scaledWidth * 0.5f;
-		float ellipseCentreY = scaledHeight ;
-
-		// create ball body
-		BodyDef ballBodyDef = new BodyDef();
+		float ellipseCentreY = scaledHeight;
 		float ballAngle = PI * (0.25f + random(0.5f));
 		float multiplier = 0.1f + random(0.9f);
-		ballBodyDef.position.set(ellipseCentreX + (multiplier * cos(ballAngle) * rx), ellipseCentreY - (multiplier * sin(ballAngle) * ry));
+		addBall(ellipseCentreX + (multiplier * cos(ballAngle) * rx), ellipseCentreY - (multiplier * sin(ballAngle) * ry));
+	}
+	
+	public void addBall(float centreX,float centreY) {
+		
+		// create ball body
+		BodyDef ballBodyDef = new BodyDef();
+		ballBodyDef.position.set(centreX,centreY);
 		Body ballBody = box2dWorld.createBody(ballBodyDef);
 
 		// attach shape to ball
@@ -192,12 +216,9 @@ public class Box2dApp extends App {
 		balls.add(ballBody);
 
 	}
-
-	@Override
-	public void draw() {
-		background(0);	
-
-		if(serial.available() > 0){
+	
+	public void readGravityFromSerial(){
+		if(serial != null && serial.available() > 0){
 			String sensorValues = serial.readStringUntil('\n');
 			if(sensorValues != null){
 				Pattern pattern = Pattern.compile("X([0-9]+)Y([0-9]+)Z([0-9]+)");
@@ -211,31 +232,34 @@ public class Box2dApp extends App {
 				}				
 			}
 		}
+	}
+	
+	@Override
+	public void draw() {
+		
+		//draw black background
+		background(0); 
+		
+		//get the accelerometer data from arduino
+		readGravityFromSerial();
 			
-		//run the physic simulation for one step
+		//run the physics simulation for one step
 		box2dWorld.step(timeStep, iterations);
 		
-		//draw where the balls are
+		//reassign balls to stages according to their position
+		updateStages();
+		
+		//remap coordinates to scale to fill screen
 		pushMatrix();
-	
-		translate(0,HEIGHT);
+		translate(0,0);		
+		scale(scale,scale);
 		
-		scale(scale,-scale);		
-
-		//draw where the lines are
-		//stroke(255,0,0);
-		//plotHourglass();
-		
-		stroke(0,0,255);
-
-		for(Body ball:balls){
-			Vec2 ballPos = ball.getPosition();
-			ellipseMode(RADIUS);
-			ellipse(
-				ballPos.x, ballPos.y, circleRadius,circleRadius
-			);
+		//draw the currently live stages 
+		for(Stage liveStage:liveStages){
+			liveStage.draw();
 		}
-
+		
+		//draw where the edges are
 		stroke(255,0,0);
 		for(Body line:lines){
 			Vec2 linePos = line.getPosition();
@@ -259,8 +283,78 @@ public class Box2dApp extends App {
 		line(gX,gY,gX - gravity.x ,gY - gravity.y);
 		strokeWeight(1);
 		
+		//reset back to normal coordinate system
 		popMatrix();
+				
+	}
+	
+	public int oldestLiveStage(){
+		return Math.min(liveStages[0].getIndex(), liveStages[1].getIndex());
+	}
+
+	public Stage evenLiveStage(){
+		return liveStages[0].getIndex() % 2 == 0 ? liveStages[0] : liveStages[1];
+	}
+
+	public Stage oddLiveStage(){
+		return liveStages[0].getIndex() % 2 == 0 ? liveStages[1] : liveStages[0];
+	}
+
+	public void resetStages(){
 		
+		//remove all balls from stages
+		for(Stage stage:allStages){ 
+			stage.attached.clear();
+		}
+		
+		//remove all balls from world
+		for(Body ball:balls){ 
+			box2dWorld.destroyBody(ball);
+		}
+		balls.clear();
+		
+		//insert first ball
+		addBall(scaledWidth * 0.5f, scaledHeight * 0.75f);
+		
+		//assign first two stages
+		liveStages[0] = allStages.get(0);
+		liveStages[1] = allStages.get(1);
+
+	}
+	
+	public void updateStages(){
+		for(Body ball:balls){
+			if(ball.getPosition().y < scaledHeight * 0.5f){ //should be an odd stage ball
+				evenLiveStage().removeBall(ball);
+				oddLiveStage().addBall(ball);
+			}
+			else{ //should be an even stage ball
+				oddLiveStage().removeBall(ball);
+				evenLiveStage().addBall(ball);				
+			}
+		}
+		if(evenLiveStage().getIndex() < oddLiveStage().getIndex()){ //even stage is older
+			if(evenLiveStage().attached.size() == 0){ //even stage is empty - switch it
+				int targetStageIdx = evenLiveStage().getIndex() + 2;
+				if(targetStageIdx < allStages.size()){
+					liveStages[0] = allStages.get(targetStageIdx);			
+				}
+				else{
+					resetStages();
+				}
+			}
+		}
+		else{ //odd stage is older
+			if(oddLiveStage().attached.size() == 0){ //odd stage is empty - switch it
+				int targetStageIdx = oddLiveStage().getIndex() + 2;
+				if(targetStageIdx < allStages.size()){
+					liveStages[1] = allStages.get(targetStageIdx);
+				}
+				else{
+					resetStages();
+				}
+			}			
+		}
 	}
 
 	@Override
@@ -268,6 +362,71 @@ public class Box2dApp extends App {
 		super.setGravityAngle(angle);
 		if(box2dWorld != null){
 			box2dWorld.setGravity(v(-this.gravity.x,-this.gravity.y));			
+		}
+	}
+	
+	public class Stage {
+		public final String imageFileName;
+		public final String soundFileName;
+		public PImage image;
+		public List<Body> attached = new ArrayList<Body>();
+		public Stage(String imageFileName, String soundFileName){
+			this.imageFileName = imageFileName;
+			this.soundFileName = soundFileName;
+		}
+		public PImage getImage(){
+			if(image == null){
+				image = loadImage( dataPath("images/" + imageFileName));
+				int onscreenRadius = (int) (targetCircleRadius * width);
+				image.resize(onscreenRadius, onscreenRadius);
+			}
+			return image;
+		}
+		public boolean addBall(Body ball){
+			if(!this.attached.contains(ball)){
+				this.attached.add(ball);
+				if(this.attached.size() == 1){
+					playWav( dataPath("wavs/" + soundFileName));
+				}
+				return true;
+			}
+			else{
+				return false;
+			}
+		}
+		public boolean removeBall(Body ball){
+			if(this.attached.contains(ball)){
+				this.attached.remove(ball);
+				return true;
+			}
+			else{
+				return false;
+			}
+		}
+		public int getIndex(){
+			return allStages.indexOf(this);
+		}
+
+		public void setup(){
+			
+		}
+		
+		public void draw(){
+			//draw where the balls are
+			stroke(0,0,255);
+			for(Body ball:attached){
+				Vec2 ballPos = ball.getPosition();
+				ellipseMode(RADIUS);
+				ellipse(
+					ballPos.x, ballPos.y, circleRadius,circleRadius
+				);
+				imageMode(CENTER);
+				pushMatrix();
+				translate(ballPos.x,ballPos.y);
+				rotate(getGravityAngle());
+				image(getImage(), 0, 0, circleRadius * 2, circleRadius * 2);
+				popMatrix();
+			}
 		}
 	}
 	
