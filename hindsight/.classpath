@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<classpath>
+	<classpathentry kind="src" path="src"/>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
+	<classpathentry kind="lib" path="/home/cefn/Documents/Processing/libraries/fullscreen/library/fullscreen.jar"/>
+	<classpathentry kind="lib" path="/home/cefn/Developer/processing-1.2.1/lib/core.jar"/>
+	<classpathentry kind="lib" path="/home/cefn/Developer/processing-1.2.1/libraries/serial/library/serial.jar">
+		<attributes>
+			<attribute name="org.eclipse.jdt.launching.CLASSPATH_ATTR_LIBRARY_PATH_ENTRY" value="/home/cefn/Developer/processing-1.2.1/libraries/serial/library"/>
+		</attributes>
+	</classpathentry>
+	<classpathentry kind="lib" path="/home/cefn/Developer/processing-1.2.1/libraries/serial/library/RXTXcomm.jar">
+		<attributes>
+			<attribute name="org.eclipse.jdt.launching.CLASSPATH_ATTR_LIBRARY_PATH_ENTRY" value="/home/cefn/Developer/processing-1.2.1/libraries/serial/library"/>
+		</attributes>
+	</classpathentry>
+	<classpathentry kind="lib" path="/home/cefn/Documents/curiosity/timeshow/gsvideo_playbin_backport_20110304/GSVideo/library/gstreamer-java.jar"/>
+	<classpathentry kind="lib" path="/home/cefn/Documents/curiosity/timeshow/gsvideo_playbin_backport_20110304/GSVideo/library/jna.jar"/>
+	<classpathentry kind="lib" path="/home/cefn/Documents/curiosity/timeshow/gsvideo_playbin_backport_20110304/gsvideo_backported_20110304.jar" sourcepath="/GSVideoPlaybinBackport20110304/src"/>
+	<classpathentry kind="output" path="bin"/>
+</classpath>
