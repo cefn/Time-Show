@@ -28,7 +28,7 @@ public class HindsightApp extends PApplet{
 	int maximumCachedYears = 16;
 	
 	long lastVideoLoad = 0;
-	long videoLoadDelay = 500;
+	long videoLoadDelay = 25;
 
 	public static float WIDTH = 640;
 	public static float HEIGHT = 480;
@@ -177,7 +177,7 @@ public class HindsightApp extends PApplet{
 
 	Year lastYearSelection = null;
 	int lastYearChanged = 0;
-	long settlingFrames = 4;
+	long settlingFrames = 1;
 	public void setPlayingYear(Year year){
 		//TODO CH check if year stays put and blend in from noise after
 		if(year != lastYearSelection){
