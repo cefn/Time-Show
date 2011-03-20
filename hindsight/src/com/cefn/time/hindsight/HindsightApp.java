@@ -13,8 +13,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import codeanticode.gsvideo.GSMovie;
-
-import com.cefn.time.App;
+import fullscreen.FullScreen;
 
 import processing.core.PApplet;
 import processing.serial.Serial;
@@ -29,7 +28,7 @@ public class HindsightApp extends PApplet{
 	int maximumCachedYears = 16;
 	
 	long lastVideoLoad = 0;
-	long videoLoadDelay = 200;
+	long videoLoadDelay = 500;
 
 	public static float WIDTH = 640;
 	public static float HEIGHT = 480;
@@ -57,11 +56,18 @@ public class HindsightApp extends PApplet{
 	GSMovie playingMovie = null;
 	boolean playingMovieJumped = false; //has the currently playing movie been set to the right timestamp
 	
+	FullScreen fullScreen;
+	
 	public void setup(){
 		// configure processing
 		size((int) WIDTH, (int) HEIGHT, P3D);
+		
 		frameRate(30);
-
+		
+		fullScreen = new FullScreen(this);
+		fullScreen.setShortcutsEnabled(true);
+		fullScreen.enter();
+		
 		serial = new Serial(this, Serial.list()[0], 9600);
 		
 		try{
@@ -93,16 +99,11 @@ public class HindsightApp extends PApplet{
 				}
 			}
 		}		
-		
-		/*
-		for(int yearPos = 0; yearPos < years.size(); yearPos++){
-			addToCache(years.yearAt(yearPos));
-		}
-		*/
-		
+				
 	}
 	
-	long lastReset = 0;
+	float noiseStrength = 0;
+	float noiseFadeStep = 4f/30f;
 	@Override
 	public void draw() {
 		//read from hardware
@@ -113,41 +114,46 @@ public class HindsightApp extends PApplet{
 
 		Year currentYear = years.yearAt(yearIndex);
 		setPlayingYear(currentYear);
-				
-		float duration = playingMovie.duration();
-		if(duration != 0){
-			if(!playingMovieJumped){
-				long now = System.currentTimeMillis();
-				long timecode = now % ((long)(duration * 1000f));
-				playingMovie.jump(((float)timecode) / 1000f);
-				//playingMovie.play();
-				playingMovieJumped = true;
-			}
-		}
-		
-		float noiseStrength = abs((yearTuning - ((float)yearIndex))) * 2f; //should be approx 1
-		noiseStrength = constrain(noiseStrength, 0, 1f);
+						
+		/*
+		noiseStrength = abs((yearTuning - ((float)yearIndex))) * 2f; //should be approx 1
 		noiseStrength *= noiseStrength; //use the square of the linear distance for smoothing
+		*/
+		
+		noiseStrength = (playingMovie == null ? noiseStrength + noiseFadeStep : noiseStrength - noiseFadeStep);
+		noiseStrength = constrain(noiseStrength, 0, 1f);
 		float movieStrength = 1f - noiseStrength;
-
 		//paint noise
 		if(noiseMovie != null){
-			tint(255,255);
-			noiseMovie.volume(noiseStrength);
+			noTint();
+			//tint(255,255);
+			noiseMovie.volume(noiseStrength * 0.5f);
 			image(noiseMovie, 0, 0,width,height);
 		}
 		
 		//paint movie
-		if(playingMovie != null){
+		if(playingMovie != null){			
+			
+			//reposition movie to timestamp
+			float duration = playingMovie.duration();
+			if(duration != 0){
+				if(!playingMovieJumped){
+					long now = System.currentTimeMillis();
+					long timecode = now % ((long)(duration * 1000f));
+					playingMovie.jump(((float)timecode) / 1000f);
+					playingMovieJumped = true;
+				}
+			}
+			
+			//paint with transparency
 			tint(255,(int)(255f * movieStrength));
 			playingMovie.volume(movieStrength);
 			image(playingMovie, 0, 0, width, height);	
-			if(playingMovie.duration() > 0 && (playingMovie.duration() - playingMovie.time() < 0.1f)){
+			if(playingMovie.duration() > 0 && (playingMovie.duration() - playingMovie.time() < 0.01f)){
 				System.out.println("Resetting");
 				removeFromCache(playingYear);
-				playingYear = null;
-				playingMovie = null;				
 			}
+			
 		}
 		
 	}
@@ -169,22 +175,36 @@ public class HindsightApp extends PApplet{
 		}		
 	}
 
+	Year lastYearSelection = null;
+	int lastYearChanged = 0;
+	long settlingFrames = 4;
 	public void setPlayingYear(Year year){
-		if((playingYear != year) && ((millis() - lastVideoLoad) > videoLoadDelay)){
-			lastVideoLoad = millis();
-			playingYear = year;
+		//TODO CH check if year stays put and blend in from noise after
+		if(year != lastYearSelection){
 			System.out.println("Pot:" + potValue + " Key:" + keyValue);
+			System.out.println("New year selected:" + year.getName());
+			lastYearSelection = year;
+			lastYearChanged = frameCount;
+		}
+
+		if(year != playingYear || playingMovie == null){
 			if(playingMovie != null){
 				if(playingMovie.isPlaying()){
-					playingMovie.stop();					
+					playingMovie.pause();
 				}
+				playingMovie = null;
 			}
-			playingMovie = getCachedMovie(year);
-			playingMovieJumped = false;
-			System.out.println("Beginning: " + year.getName() + " with " + playingMovie.getFilename());
-			System.out.println("Years cached: " + cachedYears.size());
-			playingMovie.play(); //trigger playback
-			playingMovie.volume(0); //start silent
+			System.out.println("Selection " + year.getName() + " is not playingYear");
+			if((frameCount - lastYearChanged) > settlingFrames){
+				System.out.println("Settling period passed for:" + year.getName());
+				playingYear = year;
+				playingMovie = getCachedMovie(year);
+				playingMovieJumped = false;
+				System.out.println("Beginning: " + year.getName() + " with " + playingMovie.getFilename());
+				System.out.println("Years cached: " + cachedYears.size());
+				playingMovie.play(); //trigger playback
+				playingMovie.volume(0); //start silent				
+			}
 		}
 	}
 			
@@ -222,9 +242,11 @@ public class HindsightApp extends PApplet{
 	public void removeFromCache(Year yearToRemove){
 		GSMovie movieToRemove = movieCache.remove(yearToRemove.getName());
 		if(movieToRemove != null){
+			if(movieToRemove == playingMovie){
+				playingMovie = null;
+			}
 			movieToRemove.stop();	
-			//movieToRemove.dispose();	
-			movieToRemove.delete();	
+			movieToRemove.delete();
 		}
 		cachedYears.remove(yearToRemove);
 	}
