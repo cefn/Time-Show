@@ -15,8 +15,8 @@ public abstract class App extends PApplet{
 	
 	AudioClip clip;
 		
-	float WIDTH = 300;
-	float HEIGHT = 600;
+	float WIDTH = 480;
+	float HEIGHT = 800;
 
 	static final Vector ZERO = new Vector(0,0);
 	static final Vector UNIT = new Vector(1,1);

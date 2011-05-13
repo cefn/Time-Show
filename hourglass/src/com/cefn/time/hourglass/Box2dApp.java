@@ -1,9 +1,8 @@
 package com.cefn.time.hourglass;
 
+import processing.core.PApplet;
 import processing.core.PImage;
 import processing.serial.*;
-
-import cc.arduino.*;
 
 import java.io.ObjectInputStream.GetField;
 import java.util.ArrayList;
@@ -28,7 +27,13 @@ import org.jbox2d.dynamics.World;
 
 import com.cefn.time.hourglass.StoryboardApp.Stage;
 
+import fullscreen.FullScreen;
+
 public class Box2dApp extends App {
+	
+	public static void main(String[] args){
+		PApplet.main(new String[]{Box2dApp.class.getName()});
+	}
 	
 	Serial serial = null;
 	
@@ -45,8 +50,8 @@ public class Box2dApp extends App {
 	float rx; //radius of hourglass ellipses in x dimension
 	float ry; //radius of hourglass ellipses in y dimension
 
-	float targetCircleRadius = 0.05f; // the grain size as a share of width
-	float targetWaist = 0.25f; // the hourglass waist as a share of width
+	float targetCircleRadius = 0.07f; // the grain size as a share of width
+	float targetWaist = 0.35f; // the hourglass waist as a share of width
 	
 	protected AABB boundingBox;
 	protected World box2dWorld;
@@ -72,13 +77,25 @@ public class Box2dApp extends App {
 		return new Vec2(random(scaledWidth), random(scaledHeight));
 	}
 
+	boolean alreadyRunSetup = false;
+	
+	FullScreen fullScreen;
+	
 	public void setup() {
 		// configure processing
-		size((int) WIDTH, (int) HEIGHT, OPENGL);
+		if(!alreadyRunSetup){
+			alreadyRunSetup = true;
+			size((int) WIDTH, (int) HEIGHT, OPENGL);			
+			fullScreen = new FullScreen(this);
+			fullScreen.setShortcutsEnabled(true);
+			fullScreen.setResolution(480, 800);
+			fullScreen.enter();
+		}
 		frameRate(targetFps);
 		
+		
 		//set up serial link to arduino
-		//serial = new Serial(this, Serial.list()[0], 9600);
+		serial = new Serial(this, Serial.list()[0], 9600);
 		
 		// work out the angle where the ellipse lines should intersect
 		// coordinate origins for each ellipse are separated by scaledHeight
@@ -98,18 +115,33 @@ public class Box2dApp extends App {
 		setGravityAngle(PI);
 
 		//add floor and ceiling
-		addLine(0.1f,0.1f,29.9f,0.1f); //adding them at the borders makes them invisible
-		addLine(0.1f,59.9f,29.9f,59.9f);
+		addLine(0.1f,0.1f,47.9f,0.1f); //adding them at the borders makes them invisible
+		addLine(0.1f,79.9f,47.9f,79.9f);
 
 		/** Create hourglass boundary using edge polygons*/
 		plotHourglass();
 				
 		allStages = Arrays.asList(new Stage[]{
-			new Stage("sperm.png","rumpsong.wav"){},
-			new Stage("heart.png","heartbeat-01.wav"){},
-			new Stage("baby.png","birth.wav"){},
-			new Stage("adult.png","adult.wav"){},
-			new Stage("pensioner.png","elderly.wav"){}
+			new Stage("egg.png","cellpop.wav"){},
+			new Stage("heart.png","heartbeat-01.wav"){
+				@Override
+				public void draw() {
+					if(attached.size() > 0){
+						while(balls.size() < NUM_BALLS){
+							addRandomBall();
+						}						
+					}
+					super.draw();
+				}
+			},
+			new Stage("baby.png","baby_cry.wav"){},
+			new Stage("schoolboy.png",null){},
+			new Stage("lover.png",null){},
+			new Stage("soldier.png",null){},
+			new Stage("judge.png",null){},
+			new Stage("pantaloon.png",null){},
+			new Stage("dust.png",null){},
+			new Stage("dust2.png",null){},
 		});	  	 
 		
 		for(Stage stage:allStages){
@@ -191,10 +223,10 @@ public class Box2dApp extends App {
 
 	public void addRandomBall(){
 		float ellipseCentreX = scaledWidth * 0.5f;
-		float ellipseCentreY = scaledHeight;
+		float ellipseCentreY = 0;
 		float ballAngle = PI * (0.25f + random(0.5f));
-		float multiplier = 0.1f + random(0.9f);
-		addBall(ellipseCentreX + (multiplier * cos(ballAngle) * rx), ellipseCentreY - (multiplier * sin(ballAngle) * ry));
+		float multiplier = 0.1f + random(0.5f);
+		addBall(ellipseCentreX + (multiplier * cos(ballAngle) * rx), ellipseCentreY + (multiplier * sin(ballAngle) * ry));
 	}
 	
 	public void addBall(float centreX,float centreY) {
@@ -218,17 +250,20 @@ public class Box2dApp extends App {
 	}
 	
 	public void readGravityFromSerial(){
-		if(serial != null && serial.available() > 0){
-			String sensorValues = serial.readStringUntil('\n');
-			if(sensorValues != null){
-				Pattern pattern = Pattern.compile("X([0-9]+)Y([0-9]+)Z([0-9]+)");
-				Matcher matcher = pattern.matcher(sensorValues);
-				if(matcher.find()){
-					int x = Integer.parseInt(matcher.group(1)) - 512;
-					int y = Integer.parseInt(matcher.group(2)) - 512;
-					int z = Integer.parseInt(matcher.group(3)) - 512;
-					System.out.println("X:" + x + " Y:" + y + " Z:" + z);
-					box2dWorld.setGravity(v(-x,y));
+		if(serial != null){
+			if(serial.available() > 0){
+				String sensorValues = serial.readStringUntil('\n');
+				if(sensorValues != null){
+					Pattern pattern = Pattern.compile("X([0-9]+)Y([0-9]+)Z([0-9]+)");
+					Matcher matcher = pattern.matcher(sensorValues);
+					if(matcher.find()){
+						int x = Integer.parseInt(matcher.group(1)) - 512;
+						int y = Integer.parseInt(matcher.group(2)) - 512;
+						int z = Integer.parseInt(matcher.group(3)) - 512;
+						System.out.println("X:" + x + " Y:" + y + " Z:" + z);
+						box2dWorld.setGravity(v(-x,y));
+						gravity = new Vector(-x,-y);
+					}				
 				}				
 			}
 		}
@@ -260,6 +295,7 @@ public class Box2dApp extends App {
 		}
 		
 		//draw where the edges are
+		/*
 		stroke(255,0,0);
 		for(Body line:lines){
 			Vec2 linePos = line.getPosition();
@@ -273,8 +309,10 @@ public class Box2dApp extends App {
 				}
 			}
 		}
+		*/
 		
 		//draw gravity
+		/*
 		float gX = scaledWidth * 0.5f;
 		float gY = scaledHeight * 0.5f;
 		float gScale = 10;
@@ -282,6 +320,7 @@ public class Box2dApp extends App {
 		stroke(0,255,0);
 		line(gX,gY,gX - gravity.x ,gY - gravity.y);
 		strokeWeight(1);
+		*/
 		
 		//reset back to normal coordinate system
 		popMatrix();
@@ -301,7 +340,7 @@ public class Box2dApp extends App {
 	}
 
 	public void resetStages(){
-		
+				
 		//remove all balls from stages
 		for(Stage stage:allStages){ 
 			stage.attached.clear();
@@ -312,7 +351,7 @@ public class Box2dApp extends App {
 			box2dWorld.destroyBody(ball);
 		}
 		balls.clear();
-		
+
 		//insert first ball
 		addBall(scaledWidth * 0.5f, scaledHeight * 0.75f);
 		
@@ -377,16 +416,19 @@ public class Box2dApp extends App {
 		public PImage getImage(){
 			if(image == null){
 				image = loadImage( dataPath("images/" + imageFileName));
-				int onscreenRadius = (int) (targetCircleRadius * width);
-				image.resize(onscreenRadius, onscreenRadius);
+				float localCircleRadius = targetCircleRadius * width;
+				if(imageFileName=="dust.png"){
+					localCircleRadius = 0.1f * localCircleRadius;
+				}
+				image.resize((int)localCircleRadius, (int)localCircleRadius);
 			}
 			return image;
 		}
 		public boolean addBall(Body ball){
 			if(!this.attached.contains(ball)){
 				this.attached.add(ball);
-				if(this.attached.size() == 1){
-					playWav( dataPath("wavs/" + soundFileName));
+				if(this.attached.size() == 1 && soundFileName != null){
+					//playWav( dataPath("wavs/" + soundFileName));
 				}
 				return true;
 			}
@@ -416,15 +458,28 @@ public class Box2dApp extends App {
 			stroke(0,0,255);
 			for(Body ball:attached){
 				Vec2 ballPos = ball.getPosition();
+				/*
 				ellipseMode(RADIUS);
 				ellipse(
 					ballPos.x, ballPos.y, circleRadius,circleRadius
 				);
+				*/
 				imageMode(CENTER);
 				pushMatrix();
 				translate(ballPos.x,ballPos.y);
 				rotate(getGravityAngle());
-				image(getImage(), 0, 0, circleRadius * 2, circleRadius * 2);
+				pushMatrix();
+				//scale(1f/4f);
+				if(imageFileName.equals("dust.png")){
+					image(getImage(), 0, 0, circleRadius * 0.25f, circleRadius * 0.25f);					
+				}
+				else if(imageFileName.equals("dust2.png")){
+				}
+				else{
+					image(getImage(), 0, 0, circleRadius * 2, circleRadius * 2);
+					//image(getImage(), 0, 0);
+				}
+				popMatrix();
 				popMatrix();
 			}
 		}
