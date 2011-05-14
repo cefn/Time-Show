@@ -4,19 +4,18 @@ import processing.core.PApplet;
 import processing.core.PImage;
 import processing.serial.*;
 
-import java.io.ObjectInputStream.GetField;
+import java.applet.AudioClip;
+import java.awt.event.KeyEvent;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Iterator;
 import java.util.List;
-import java.util.Set;
-import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.jbox2d.collision.AABB;
 import org.jbox2d.collision.CircleDef;
-import org.jbox2d.collision.MassData;
 import org.jbox2d.collision.PolygonDef;
 import org.jbox2d.collision.PolygonShape;
 import org.jbox2d.collision.Shape;
@@ -25,23 +24,37 @@ import org.jbox2d.dynamics.Body;
 import org.jbox2d.dynamics.BodyDef;
 import org.jbox2d.dynamics.World;
 
-import com.cefn.time.hourglass.StoryboardApp.Stage;
+import ddf.minim.AudioSample;
+import ddf.minim.AudioSnippet;
+import ddf.minim.Minim;
 
 import fullscreen.FullScreen;
 
-public class Box2dApp extends App {
+public class Box2dApp extends PApplet {
 	
 	public static void main(String[] args){
 		PApplet.main(new String[]{Box2dApp.class.getName()});
 	}
 	
+	AudioClip clip;
+	
+	float WIDTH_PIX = 480;
+	float HEIGHT_PIX = 800;
+
+	public static final float G = 10f;	
+	Vec2 gravity;
+	
 	Serial serial = null;
+	FullScreen fullScreen = null;
+	Minim minim = null;
+
+	float small = 0.01f, large = 1.0f - small;
 	
 	public int targetFps = 60;
 	public float timeStep = 1f / (float) targetFps;
-	public int iterations = 5;
-
-	public static final int NUM_BALLS = 24;
+	public int iterations = 20; //was 5
+	
+	public static final int MAX_BALLS = 24;
 
 	List<Body> balls = new ArrayList<Body>();
 	List<Body> lines = new ArrayList<Body>();
@@ -53,49 +66,118 @@ public class Box2dApp extends App {
 	float targetCircleRadius = 0.07f; // the grain size as a share of width
 	float targetWaist = 0.35f; // the hourglass waist as a share of width
 	
+	float actualWidth = 1f; //approximate width of real screen in m
+	
+	float averageAccelerometerNormal = 0.1f; //the normal pythag value which comes from accelerometer
+	
 	protected AABB boundingBox;
 	protected World box2dWorld;
 
 	protected BodyDef groundBodyDef;
 	protected PolygonDef groundPolygonDef;
 
-	protected float scale = 10f;
+	protected float zoom = ((float)WIDTH_PIX) / actualWidth; //multiply box2d units by 'zoom' value to get pixel units
 
-	float scaledWidth = WIDTH / scale;
-	float scaledHeight = HEIGHT / scale;
+	float modelWidth = actualWidth;
+	float modelHeight = actualWidth * ((float)HEIGHT_PIX) / ((float)WIDTH_PIX);
 
-	protected float circleRadius = scaledWidth * targetCircleRadius;
+	protected float circleRadius = modelWidth * targetCircleRadius;
 
 	protected List<Stage> allStages = new ArrayList<Stage>();
 	protected Stage[] liveStages = new Stage[2];
+		
+	public void stopWav(){
+		if(clip != null){
+			clip.stop();
+			clip = null;
+		}
+	}
 	
+	public void playWav(String filename){
+		stopWav();
+		try{
+			java.net.URL url = new URL("file://" + filename);
+			java.io.File file = new java.io.File(url.toURI());
+			System.out.println("Attempting to play " + file.getAbsolutePath());
+			clip = this.getAudioClip(url);
+			clip.play();		  
+		}
+		catch(MalformedURLException mue){
+			mue.printStackTrace();
+		}
+		catch (java.net.URISyntaxException ex) {
+			ex.printStackTrace();
+		}	  
+	}
+			
 	protected Vec2 v(float x, float y) {
 		return new Vec2(x, y);
 	}
 	
 	protected Vec2 randomV() {
-		return new Vec2(random(scaledWidth), random(scaledHeight));
+		return new Vec2(random(modelWidth), random(modelHeight));
 	}
-
-	boolean alreadyRunSetup = false;
 	
-	FullScreen fullScreen;
+	public void setGravity(float xG, float yG){
+		setGravity(v( xG, yG) );
+	}
+	
+	public void setGravity(Vec2 gravity){
+		this.gravity = gravity;
+		this.box2dWorld.setGravity(gravity);
+		System.out.println("Gravity set to : " + gravity.x + "," + gravity.y);
+	}
+	
+	public float getGravityAngle(){
+		return (float)Math.atan2((double)-gravity.x,(double)gravity.y);
+	}
+	
+	public void keyPressed(KeyEvent e){
+		//System.out.println("Received key event " + e);
+		if(e.getKeyCode() == LEFT){
+			//System.out.println("Turning left ");
+			//setGravityAngle(gravityAngle += PI / 16);			
+		}
+		if(e.getKeyCode() == RIGHT){
+			//System.out.println("Turning right ");
+			//setGravityAngle(gravityAngle -= PI / 16);			
+		}
+	}
+	
+	public static float signum(float f) {
+		  if (f > 0) return 1f;
+		  if (f < 0) return -1f;
+		  return 0;
+	} 
+
+
+//	boolean alreadyRunSetup = false;
 	
 	public void setup() {
 		// configure processing
-		if(!alreadyRunSetup){
-			alreadyRunSetup = true;
-			size((int) WIDTH, (int) HEIGHT, OPENGL);			
-			fullScreen = new FullScreen(this);
-			fullScreen.setShortcutsEnabled(true);
-			fullScreen.setResolution(480, 800);
-			fullScreen.enter();
-		}
-		frameRate(targetFps);
+		size(screenWidth, screenHeight, P2D);
+			
+		//note rotated when drawn
+		int screenWidth = (int) HEIGHT_PIX; //width=>height
+		int screenHeight = (int) WIDTH_PIX; //height=>width
 		
+		//configure applet
+		//size(screenWidth, screenHeight, P2D);
 		
+		//configure fullscreen
+		fullScreen = new FullScreen(this);
+		fullScreen.setShortcutsEnabled(true);
+		fullScreen.setResolution(screenWidth, screenHeight);
+		fullScreen.enter();
+
+		//set up minim library for sound
+		minim = new Minim(this);
+
 		//set up serial link to arduino
 		serial = new Serial(this, Serial.list()[0], 9600);
+
+		//establish target frame rate
+		frameRate(targetFps);			
 		
 		// work out the angle where the ellipse lines should intersect
 		// coordinate origins for each ellipse are separated by scaledHeight
@@ -104,43 +186,55 @@ public class Box2dApp extends App {
 		// cx is always zero
 		float theta = asin(targetWaist); // the angle subtending the waist
 		endAngle = (PI * 0.5f) - theta;
-		rx = scaledWidth * 0.5f;// ellipses fill screen horizontally
-		ry = scaledHeight * 0.5f / cos(theta); // radius is enough that the curve fills the height
+		rx = modelWidth * 0.5f;// ellipses fill screen horizontally
+		ry = modelHeight * 0.5f / cos(theta); // radius is enough that the curve fills the height
 		
 		// create world
-		boundingBox = new AABB(v(0, 0), v(scaledWidth, scaledHeight));
+		boundingBox = new AABB(v(0, 0), v(modelWidth, modelHeight));
 		Vec2 gravity = v(0, 0);
 		boolean sleep = false;
 		box2dWorld = new World(boundingBox, gravity, sleep);
-		setGravityAngle(PI);
+		setGravity(0, -G);
 
 		//add floor and ceiling
-		addLine(0.1f,0.1f,47.9f,0.1f); //adding them at the borders makes them invisible
-		addLine(0.1f,79.9f,47.9f,79.9f);
+		addLine(modelWidth * small,modelHeight * small,modelWidth * large, modelHeight * small); //adding them at the borders makes them invisible
+		addLine(modelWidth * small,modelHeight * large, modelWidth * large, modelHeight * large);
 
 		/** Create hourglass boundary using edge polygons*/
 		plotHourglass();
 				
 		allStages = Arrays.asList(new Stage[]{
-			new Stage("egg.png","cellpop.wav"){},
-			new Stage("heart.png","heartbeat-01.wav"){
+			new Stage("sperm.png","00_rumpsong.mp3"){},
+			new Stage("egg.png","01_alltheworld.mp3"){},
+			new Stage("heart.png","02_exits.mp3"){
 				@Override
 				public void draw() {
 					if(attached.size() > 0){
-						while(balls.size() < NUM_BALLS){
-							addRandomBall();
-						}						
+						if(balls.size() < MAX_BALLS){
+							for(Body ball:attached){
+								Vec2 prevPos = ball.getPosition();
+								//add a new ball if existing is in an outer quartile
+								if(abs((prevPos.y / modelHeight) - 0.5f) > 0.25f){
+									float angle = random(PI);
+									float newX = modelWidth * 0.5f;
+									float newY = prevPos.y + circleRadius * cos(angle);
+									newY = constrain(newY, 0, modelHeight);
+									Box2dApp.this.addBall(newX, newY);									
+								}
+							}
+						}	
 					}
 					super.draw();
 				}
 			},
-			new Stage("baby.png","baby_cry.wav"){},
-			new Stage("schoolboy.png",null){},
-			new Stage("lover.png",null){},
-			new Stage("soldier.png",null){},
-			new Stage("judge.png",null){},
-			new Stage("pantaloon.png",null){},
-			new Stage("dust.png",null){},
+			new Stage("baby.png","03_baby.mp3"){},
+			new Stage("schoolboy.png","04_schoolboy.mp3"){},
+			new Stage("lover.png","05_teenlover.mp3"){},
+			new Stage("soldier.png","06_soldier.mp3"){},
+			new Stage("judge.png","07_judge.mp3"){},
+			new Stage("pantaloon.png","08_pensioner.mp3"){},
+			new Stage("oblivion.png","09_elderly.mp3"){},
+			new Stage("dust.png","10_sanseverything.mp3"){},
 			new Stage("dust2.png",null){},
 		});	  	 
 		
@@ -152,60 +246,44 @@ public class Box2dApp extends App {
 
 	}
 
-	public void plotHourglass() {
+	
+	/** Create the hourglass as a series of single, partial arcs . */
+ 	public void plotHourglass() {
 	
 		// draw each ellipse's lines as numLines line segments
 		int numLines = 6;
-		float topCx = scaledWidth * 0.5f, topCy = 0;
-		float bottomCx = scaledWidth * 0.5f, bottomCy = scaledHeight;
+		float topCx = modelWidth * 0.5f, topCy = 0;
+		float bottomCx = modelWidth * 0.5f, bottomCy = modelHeight;
 
 		// top right
-		pushMatrix();
-		translate(topCx, topCy);
-		scale(rx, ry);
-		plotArc(numLines, endAngle);
-		popMatrix();
-
+		plotArc(topCx, topCy, rx, ry, numLines, endAngle);
 		// top left
-		pushMatrix();
-		translate(topCx, topCy);
-		scale(-rx, ry);
-		plotArc(numLines, endAngle);
-		popMatrix();
-
+		plotArc(topCx, topCy, -rx, ry, numLines, endAngle);
 		// bottom right
-		pushMatrix();
-		translate(bottomCx, bottomCy);
-		scale(rx, -ry);
-		plotArc(numLines, endAngle);
-		popMatrix();
-
+		plotArc(bottomCx, bottomCy, rx, -ry, numLines, endAngle);
 		// bottom left
-		pushMatrix();
-		translate(bottomCx, bottomCy);
-		scale(-rx, -ry);
-		plotArc(numLines, endAngle);
-		popMatrix();
+		plotArc(bottomCx, bottomCy, -rx, -ry, numLines, endAngle);
 		
 	}
 
-	public void plotArc(int numLines, float endAngle) {
+	/** Plot a single multi-segment arc according to a unit circle, 
+	 * calculating the inverse transform (given current processing scaling)
+	 */
+	public void plotArc(float xOffset, float yOffset, float xR, float yR, int numLines, float endAngle) {
 		float angleStep = endAngle / ((float) numLines);
+				
 		for (int line = 0; line < numLines; line++) {
 			float angle = line * angleStep;
-			float fromX = cos(angle);
-			float fromY = sin(angle);
-			float toX = cos(angle + angleStep);
-			float toY = sin(angle + angleStep);
+			float fromX = xOffset + (cos(angle) * xR);
+			float fromY = yOffset + (sin(angle) * yR);
+			float toX = xOffset + (cos(angle + angleStep) * xR);
+			float toY = yOffset + (sin(angle + angleStep) * yR);
+			
+			//draw the line 
 			line(fromX,fromY,toX,toY);
 
-			//absolutely position the polygons according to the current transform
-			float fromModelX = modelX(fromX,fromY,0);
-			float fromModelY = modelY(fromX,fromY,0);
-			float toModelX = modelX(toX,toY,0);
-			float toModelY = modelY(toX,toY,0);
-			//line(fromModelX, fromModelY, toModelX,toModelY);
-			addLine(fromModelX, fromModelY, toModelX,toModelY);
+			//create the sections according to the current transform
+			addLine(fromX, fromY, toX,toY);
 		}
 	}
 
@@ -222,7 +300,7 @@ public class Box2dApp extends App {
 	}
 
 	public void addRandomBall(){
-		float ellipseCentreX = scaledWidth * 0.5f;
+		float ellipseCentreX = modelWidth * 0.5f;
 		float ellipseCentreY = 0;
 		float ballAngle = PI * (0.25f + random(0.5f));
 		float multiplier = 0.1f + random(0.5f);
@@ -248,7 +326,7 @@ public class Box2dApp extends App {
 		balls.add(ballBody);
 
 	}
-	
+		
 	public void readGravityFromSerial(){
 		if(serial != null){
 			if(serial.available() > 0){
@@ -257,12 +335,23 @@ public class Box2dApp extends App {
 					Pattern pattern = Pattern.compile("X([0-9]+)Y([0-9]+)Z([0-9]+)");
 					Matcher matcher = pattern.matcher(sensorValues);
 					if(matcher.find()){
-						int x = Integer.parseInt(matcher.group(1)) - 512;
-						int y = Integer.parseInt(matcher.group(2)) - 512;
-						int z = Integer.parseInt(matcher.group(3)) - 512;
+						//read analog values and centre them
+						float x = (float)Integer.parseInt(matcher.group(1));
+						float y = (float)Integer.parseInt(matcher.group(2));
+						float z = (float)Integer.parseInt(matcher.group(3));
+						//centre the values
+						x -= 512f; 
+						y -= 512f;
+						z -= 512f;
+						//normalise against unit range and average accelerometer value for G
+						x /= 1024f * averageAccelerometerNormal;
+						y /= 1024f * averageAccelerometerNormal;
+						z /= 1024f * averageAccelerometerNormal;
+
 						System.out.println("X:" + x + " Y:" + y + " Z:" + z);
-						box2dWorld.setGravity(v(-x,y));
-						gravity = new Vector(-x,-y);
+						
+						setGravity(G * -x, G * y);
+						
 					}				
 				}				
 			}
@@ -286,16 +375,20 @@ public class Box2dApp extends App {
 		
 		//remap coordinates to scale to fill screen
 		pushMatrix();
-		translate(0,0);		
-		scale(scale,scale);
-		
+
+		//map model values to pixel values
+		scale(zoom,zoom);
+
+		//rotate model to left so it fits in screen
+		rotate(PI * -0.5f);
+		translate(-modelWidth, 0);
+
 		//draw the currently live stages 
 		for(Stage liveStage:liveStages){
 			liveStage.draw();
 		}
 		
 		//draw where the edges are
-		/*
 		stroke(255,0,0);
 		for(Body line:lines){
 			Vec2 linePos = line.getPosition();
@@ -309,7 +402,6 @@ public class Box2dApp extends App {
 				}
 			}
 		}
-		*/
 		
 		//draw gravity
 		/*
@@ -353,7 +445,7 @@ public class Box2dApp extends App {
 		balls.clear();
 
 		//insert first ball
-		addBall(scaledWidth * 0.5f, scaledHeight * 0.75f);
+		addBall(modelWidth * 0.5f, modelHeight * 0.75f);
 		
 		//assign first two stages
 		liveStages[0] = allStages.get(0);
@@ -363,7 +455,7 @@ public class Box2dApp extends App {
 	
 	public void updateStages(){
 		for(Body ball:balls){
-			if(ball.getPosition().y < scaledHeight * 0.5f){ //should be an odd stage ball
+			if(ball.getPosition().y < modelHeight * 0.5f){ //should be an odd stage ball
 				evenLiveStage().removeBall(ball);
 				oddLiveStage().addBall(ball);
 			}
@@ -395,40 +487,32 @@ public class Box2dApp extends App {
 			}			
 		}
 	}
-
-	@Override
-	public void setGravityAngle(float angle) {
-		super.setGravityAngle(angle);
-		if(box2dWorld != null){
-			box2dWorld.setGravity(v(-this.gravity.x,-this.gravity.y));			
-		}
-	}
 	
 	public class Stage {
 		public final String imageFileName;
-		public final String soundFileName;
+		public final AudioSnippet audioSnippet;
 		public PImage image;
 		public List<Body> attached = new ArrayList<Body>();
 		public Stage(String imageFileName, String soundFileName){
 			this.imageFileName = imageFileName;
-			this.soundFileName = soundFileName;
+			if(soundFileName != null){
+				this.audioSnippet = minim.loadSnippet("data/sounds/" + soundFileName);				
+			}
+			else{
+				this.audioSnippet = null;
+			}
 		}
 		public PImage getImage(){
 			if(image == null){
 				image = loadImage( dataPath("images/" + imageFileName));
-				float localCircleRadius = targetCircleRadius * width;
-				if(imageFileName=="dust.png"){
-					localCircleRadius = 0.1f * localCircleRadius;
-				}
-				image.resize((int)localCircleRadius, (int)localCircleRadius);
 			}
 			return image;
 		}
 		public boolean addBall(Body ball){
 			if(!this.attached.contains(ball)){
 				this.attached.add(ball);
-				if(this.attached.size() == 1 && soundFileName != null){
-					//playWav( dataPath("wavs/" + soundFileName));
+				if(this.attached.size() == 1 && audioSnippet != null){
+					audioSnippet.play();
 				}
 				return true;
 			}
@@ -445,6 +529,7 @@ public class Box2dApp extends App {
 				return false;
 			}
 		}
+		
 		public int getIndex(){
 			return allStages.indexOf(this);
 		}
@@ -469,16 +554,10 @@ public class Box2dApp extends App {
 				translate(ballPos.x,ballPos.y);
 				rotate(getGravityAngle());
 				pushMatrix();
-				//scale(1f/4f);
-				if(imageFileName.equals("dust.png")){
-					image(getImage(), 0, 0, circleRadius * 0.25f, circleRadius * 0.25f);					
-				}
-				else if(imageFileName.equals("dust2.png")){
-				}
-				else{
-					image(getImage(), 0, 0, circleRadius * 2, circleRadius * 2);
-					//image(getImage(), 0, 0);
-				}
+				image(getImage(), 
+						0, 0, 
+						getImage().width * circleRadius * 2.0f / 128f, 
+						getImage().height * circleRadius * 2.0f / 128f);
 				popMatrix();
 				popMatrix();
 			}
